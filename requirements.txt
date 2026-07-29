@@ -1,0 +1,9 @@
+langchain>=0.2.0
+langchain-openai>=0.1.0
+langgraph>=0.0.10
+pydantic>=2.0
+python-dotenv>=1.0.0
+google-api-python-client>=2.0.0
+google-auth-httplib2>=0.1.0
+google-auth-oauthlib>=0.5.0
+pandas>=2.0.0
