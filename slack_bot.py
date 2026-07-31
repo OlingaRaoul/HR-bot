@@ -238,12 +238,100 @@ def reply_gemini_chat(say, prompt):
     if needs_excel:
         say("🔎 Accessing live HR database...")
         try:
+            from datetime import date
             sheets = SheetsClient()
             entries = sheets.read_stage_data("Entries")
             demo_tasks = sheets.read_stage_data("Demo Task Status")
             next_steps = sheets.read_stage_data("Next Steps")
             
-            demo_list = []
+            # Find specific name mentions in query to prioritize matching rows
+            query_lower = prompt.lower()
+            
+            # 1. Pre-compute Alerts, Mismatches, and Intern Schedules
+            today = date.today()
+            stale_profiles = []
+            mismatches = []
+            starting_soon = []
+            ending_soon = []
+            
+            # Stale Pending/Open profiles (>= 30 days old)
+            for row in entries:
+                status = str(row.get("Status") or "").strip().lower()
+                if status in ("pending", "open"):
+                    entry_date = parse_sheet_date(row.get("Entry Date"))
+                    if entry_date:
+                        days_since = (today - entry_date).days
+                        if days_since >= 30:
+                            f_name = str(row.get("First Name") or "").strip()
+                            l_name = str(row.get("Last Name") or "").strip()
+                            name = f"{f_name} {l_name}".strip()
+                            if name:
+                                stale_profiles.append(
+                                    f"🔔 Stale profile — {name}\n"
+                                    f"Entries row for {name} hasn't been updated in {days_since} days."
+                                )
+                                
+            # Cross-sheet mismatches
+            demo_statuses = {}
+            for row in demo_tasks:
+                eval_col = str(row.get("Demo Task Evaluation") or "")
+                name = eval_col.replace("Demo Task Evaluation - ", "").replace("Task Evaluation - ", "").strip()
+                if name:
+                    demo_statuses[name.lower()] = {
+                        "name": name,
+                        "status": str(row.get("Status") or "").strip(),
+                        "state": str(row.get("State of demo task") or "").strip()
+                    }
+                    
+            for row in entries:
+                f_name = str(row.get("First Name") or "").strip()
+                l_name = str(row.get("Last Name") or "").strip()
+                name = f"{f_name} {l_name}".strip()
+                entry_status = str(row.get("Status") or "").strip()
+                entry_stage = str(row.get("Stage") or "").strip()
+                
+                if name:
+                    # Miriam Püschner case: marked Coming in Demo Task Status but not active at Demo Task in Entries
+                    if name.lower() in demo_statuses:
+                        demo_info = demo_statuses[name.lower()]
+                        if demo_info["status"].lower() == "coming" and entry_status.lower() not in ("coming", "closed", "accepted"):
+                            mismatches.append(
+                                f"⚠️ Sheet mismatch — {demo_info['name']}\n"
+                                f"{demo_info['name']} shows Status \"Coming\" in Demo Task Status, but Entries doesn't show them as active at Demo Task stage. Update Entries to match."
+                            )
+                    # Ahmad Hijazi case: Demo Task stage in Entries but no row in Demo Task Status
+                    if entry_stage.lower() in ("demo tasks", "demo task") and entry_status.lower() in ("pending", "open"):
+                        if name.lower() not in demo_statuses:
+                            mismatches.append(
+                                f"⚠️ Sheet mismatch — {name}\n"
+                                f"{name} is at Demo Task stage in Entries (Status: {entry_status.upper()}) but has no row in Demo Task Status. Add them, or update Entries if this candidate actually dropped out."
+                            )
+
+            # Intern start/end dates
+            for row in next_steps:
+                name = str(row.get("Name") or "").strip()
+                start_date = parse_sheet_date(row.get("Start Date"))
+                end_date = parse_sheet_date(row.get("End Date") or row.get("End_Date"))
+                
+                if name:
+                    if start_date:
+                        days_to_start = (start_date - today).days
+                        if 25 <= days_to_start <= 35:
+                            starting_soon.append(
+                                f"📅 Starting in 1 month — {name}\n"
+                                f"{name} starts on {start_date.strftime('%Y-%m-%d')}."
+                            )
+                    if end_date:
+                        days_to_end = (end_date - today).days
+                        if 10 <= days_to_end <= 18:
+                            ending_soon.append(
+                                f"📅 Ending in 2 weeks — {name}\n"
+                                f"{name}'s internship ends on {end_date.strftime('%Y-%m-%d')}."
+                            )
+
+            # 2. Filter Candidate Rows relevant to the user query
+            demo_matched = []
+            demo_other = []
             for row in demo_tasks:
                 eval_col = str(row.get("Demo Task Evaluation") or "")
                 name = eval_col.replace("Demo Task Evaluation - ", "").replace("Task Evaluation - ", "").strip()
@@ -252,9 +340,16 @@ def reply_gemini_chat(say, prompt):
                     demo_state = str(row.get("State of demo task") or "N/A").strip()
                     status = str(row.get("Status") or "N/A").strip()
                     interview = str(row.get("2rd interview state") or "N/A").strip()
-                    demo_list.append(f"• Candidate: {name} | Position: {pos} | Demo State: {demo_state} | 2nd Interview: {interview} | Status: {status}")
+                    line = f"• Candidate: {name} | Position: {pos} | Demo State: {demo_state} | 2nd Interview: {interview} | Status: {status}"
+                    
+                    if name.lower() in query_lower:
+                        demo_matched.append(line)
+                    else:
+                        demo_other.append(line)
+            demo_list = demo_matched + demo_other
 
-            entries_pending_list = []
+            entries_matched = []
+            entries_other = []
             for row in entries:
                 status = str(row.get("Status") or "").strip().lower()
                 stage = str(row.get("Stage") or "").strip().lower()
@@ -265,14 +360,26 @@ def reply_gemini_chat(say, prompt):
                     pos = str(row.get("Position you are interested in:") or "").strip()
                     entry_date_str = str(row.get("Entry Date") or "N/A").strip()
                     if name:
-                        entries_pending_list.append(f"• Candidate: {name} | Position: {pos} | Stage: {row.get('Stage')} | Status: {row.get('Status')} | Entry Date: {entry_date_str}")
+                        line = f"• Candidate: {name} | Position: {pos} | Stage: {row.get('Stage')} | Status: {row.get('Status')} | Entry Date: {entry_date_str}"
+                        if name.lower() in query_lower:
+                            entries_matched.append(line)
+                        else:
+                            entries_other.append(line)
+            entries_pending_list = entries_matched + entries_other
 
-            next_list = []
+            next_matched = []
+            next_other = []
             for row in next_steps:
                 name = str(row.get("Name") or "").strip()
                 if name:
-                    next_list.append(f"• Candidate: {name} | State: {row.get('State', 'N/A')} | Start: {row.get('Start Date')} | End: {row.get('End Date')}")
-                    
+                    line = f"• Candidate: {name} | State: {row.get('State', 'N/A')} | Start: {row.get('Start Date')} | End: {row.get('End Date')}"
+                    if name.lower() in query_lower:
+                        next_matched.append(line)
+                    else:
+                        next_other.append(line)
+            next_list = next_matched + next_other
+
+            # 3. Monthly statistics percentages
             monthly_stats = {}
             for row in entries:
                 entry_date_str = row.get("Entry Date")
@@ -280,40 +387,63 @@ def reply_gemini_chat(say, prompt):
                 if entry_date:
                     month_key = entry_date.strftime("%B %Y")
                     if month_key not in monthly_stats:
-                        monthly_stats[month_key] = {"total": 0, "accepted": 0, "pending": 0}
+                        monthly_stats[month_key] = {"total": 0, "accepted": 0, "rejected": 0, "pending": 0, "open": 0}
                     monthly_stats[month_key]["total"] += 1
                     
                     status = str(row.get("Status") or "").strip().lower()
-                    if status in ("pending", "open"):
+                    if status == "pending":
                         monthly_stats[month_key]["pending"] += 1
-                    elif status == "closed" or "synced" in status or "coming" in status:
+                    elif status == "open":
+                        monthly_stats[month_key]["open"] += 1
+                    elif status in ("closed", "accepted", "coming") or "synced" in status:
                         monthly_stats[month_key]["accepted"] += 1
+                    elif "reject" in status or "decline" in status or "fail" in status:
+                        monthly_stats[month_key]["rejected"] += 1
                         
             stats_lines = []
             for m_key, counts in monthly_stats.items():
-                pct = (counts["accepted"] / counts["total"] * 100) if counts["total"] > 0 else 0
-                stats_lines.append(f"- {m_key}: {counts['total']} total entries, {counts['accepted']} accepted ({pct:.1f}% acceptance rate), {counts['pending']} left pending.")
+                tot = counts["total"]
+                if tot > 0:
+                    pct_acc = round(counts["accepted"] / tot * 100)
+                    pct_rej = round(counts["rejected"] / tot * 100)
+                    pct_pen = round(counts["pending"] / tot * 100)
+                    pct_op = round(counts["open"] / tot * 100)
+                    stats_lines.append(f"📊 {m_key} summary: {tot} entries — {pct_acc}% Accepted, {pct_rej}% Rejected, {pct_pen}% still Pending, {pct_op}% Open.")
             stats_summary = "\n".join(stats_lines)
 
+            # 4. Construct AI prompt context with all alerts and metrics
             prompt_context = (
                 "You are a helpful, professional, and warm AI HR Coordinator at Startup Greece. "
                 "Your tone should be conversational, natural, and friendly (like talking to a real human colleague), "
                 "while remaining precise and accurate with candidate facts and names. "
                 "Never sound robotic, cold, or overly structured unless specifically asked. Avoid repeating the same rigid template.\n\n"
-                "Here is the LIVE candidate database retrieved from our Google Sheets:\n\n"
-                "=== 1. CANDIDATES IN DEMO TASK STATUS TAB ===\n"
-                + ("\n".join(demo_list[:25]) if demo_list else "No candidates currently in Demo Task Status.") + "\n\n"
-                "=== 2. ALL QUEUED PENDING/OPEN CANDIDATES IN ENTRIES TAB ===\n"
-                + ("\n".join(entries_pending_list[:25]) if entries_pending_list else "No pending candidates in Entries.") + "\n\n"
-                "=== 3. CANDIDATES IN NEXT STEPS TAB (Onboarding & Schedules) ===\n"
-                + ("\n".join(next_list[:20]) if next_list else "No candidates in Next Steps.") + "\n\n"
-                "=== 4. PRE-COMPUTED MONTHLY PIPELINE STATISTICS ===\n"
-                + (stats_summary if stats_summary else "No monthly stats data available.") + "\n\n"
+                
+                "Below are the PRE-COMPUTED alerts, mismatches, and summaries from our database. "
+                "Use them directly to answer questions about stale profiles, mismatches, intern dates, and monthly metrics:\n\n"
+                
+                "=== 1. PRE-COMPUTED STALE PROFILES (>= 30 days of inactivity) ===\n"
+                + ("\n\n".join(stale_profiles[:15]) if stale_profiles else "No stale profiles found.") + "\n\n"
+                
+                "=== 2. PRE-COMPUTED CROSS-SHEET MISMATCHES ===\n"
+                + ("\n\n".join(mismatches[:15]) if mismatches else "No cross-sheet mismatches found.") + "\n\n"
+                
+                "=== 3. PRE-COMPUTED INTERN START/END ALERTS ===\n"
+                + ("\n\n".join(starting_soon + ending_soon) if (starting_soon or ending_soon) else "No upcoming start/end dates.") + "\n\n"
+                
+                "=== 4. PRE-COMPUTED MONTHLY PIPELINE SUMMARIES ===\n"
+                + (stats_summary if stats_summary else "No monthly summary stats available.") + "\n\n"
+                
+                "=== 5. RETRIEVED CANDIDATE DETAIL ROWS ===\n"
+                + ("\n".join(demo_list[:25]) if demo_list else "No matching demo task entries.") + "\n"
+                + ("\n".join(entries_pending_list[:25]) if entries_pending_list else "No matching entry log entries.") + "\n"
+                + ("\n".join(next_list[:25]) if next_list else "No matching onboarding entries.") + "\n\n"
+                
                 f"QUESTION FROM COLLEAGUE: {prompt}\n\n"
                 "INSTRUCTIONS FOR YOUR RESPONSE:\n"
-                "- Answer the question naturally in complete, friendly sentences. Write like a real HR colleague responding to a team member.\n"
-                "- Include specific details like candidate names, positions, and current statuses when answering questions about candidates.\n"
-                "- Do not output raw data dumps. Keep it clear, engaging, and professional."
+                "- If the user asks for alerts, mismatches, stale profiles, start/end dates, or monthly summaries, look at sections 1, 2, 3, or 4 and output the matching items EXACTLY in the formatting shown in the section (using emoji badges like 🔔, ⚠️, 📅, 📊).\n"
+                "- If the user asks a natural language question (e.g. 'From May, is there a candidate left pending?'), answer in a warm, direct, conversational way (e.g. 'Yes — 25 candidates from May 2026 are still Pending, including...').\n"
+                "- Always include specific details like candidate names, positions, and current statuses when replying.\n"
+                "- Keep the response direct, natural, and clean. Do not include raw instruction names or debug labels."
             )
             
             if is_openrouter:
