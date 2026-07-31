@@ -83,11 +83,11 @@ def handle_app_mention(event, say):
     command_lower = command.lower()
     
     try:
-        if not command or "help" in command_lower:
+        if not command or command_lower in ("help", "info", "/help"):
             reply_help(say, user)
-        elif "status" in command_lower or "list" in command_lower:
+        elif command_lower in ("status", "list", "/status", "/list"):
             reply_status(say)
-        elif "sync" in command_lower or "run" in command_lower:
+        elif command_lower in ("sync", "run", "/sync", "/run"):
             reply_sync(say)
         else:
             # Fallback: Treat as a direct question to the AI Agent
@@ -115,11 +115,11 @@ def handle_message_events(event, say):
         command_lower = command.lower()
         
         try:
-            if not command or "help" in command_lower:
+            if not command or command_lower in ("help", "info", "/help"):
                 reply_help(say, event.get("user"))
-            elif "status" in command_lower or "list" in command_lower:
+            elif command_lower in ("status", "list", "/status", "/list"):
                 reply_status(say)
-            elif "sync" in command_lower or "run" in command_lower:
+            elif command_lower in ("sync", "run", "/sync", "/run"):
                 reply_sync(say)
             else:
                 reply_gemini_chat(say, command)
@@ -296,8 +296,11 @@ def reply_gemini_chat(say, prompt):
             stats_summary = "\n".join(stats_lines)
 
             prompt_context = (
-                "You are the official AI HR Assistant for Startup Greece.\n"
-                "Below is the LIVE candidate data retrieved directly from the Google Sheets database:\n\n"
+                "You are a helpful, professional, and warm AI HR Coordinator at Startup Greece. "
+                "Your tone should be conversational, natural, and friendly (like talking to a real human colleague), "
+                "while remaining precise and accurate with candidate facts and names. "
+                "Never sound robotic, cold, or overly structured unless specifically asked. Avoid repeating the same rigid template.\n\n"
+                "Here is the LIVE candidate database retrieved from our Google Sheets:\n\n"
                 "=== 1. CANDIDATES IN DEMO TASK STATUS TAB ===\n"
                 + ("\n".join(demo_list[:25]) if demo_list else "No candidates currently in Demo Task Status.") + "\n\n"
                 "=== 2. ALL QUEUED PENDING/OPEN CANDIDATES IN ENTRIES TAB ===\n"
@@ -306,11 +309,11 @@ def reply_gemini_chat(say, prompt):
                 + ("\n".join(next_list[:20]) if next_list else "No candidates in Next Steps.") + "\n\n"
                 "=== 4. PRE-COMPUTED MONTHLY PIPELINE STATISTICS ===\n"
                 + (stats_summary if stats_summary else "No monthly stats data available.") + "\n\n"
-                f"USER QUESTION: {prompt}\n\n"
-                "INSTRUCTIONS:\n"
-                "- Answer the user's question accurately using ONLY the live data and monthly summaries above.\n"
-                "- List specific candidate names, positions, and current statuses when asked.\n"
-                "- Be direct, helpful, and concise."
+                f"QUESTION FROM COLLEAGUE: {prompt}\n\n"
+                "INSTRUCTIONS FOR YOUR RESPONSE:\n"
+                "- Answer the question naturally in complete, friendly sentences. Write like a real HR colleague responding to a team member.\n"
+                "- Include specific details like candidate names, positions, and current statuses when answering questions about candidates.\n"
+                "- Do not output raw data dumps. Keep it clear, engaging, and professional."
             )
             
             if is_openrouter:
@@ -351,7 +354,7 @@ def reply_gemini_chat(say, prompt):
                     temperature=0.7,
                     max_output_tokens=500
                 )
-            res = llm.invoke(f"You are the HR Assistant for Startup Greece. Answer the following question: {prompt}")
+            res = llm.invoke(f"You are a warm, helpful, and natural HR Assistant for Startup Greece. Answer the following question in a friendly, conversational way: {prompt}")
             say(res.content)
         except Exception as e:
             say(f"🤖 Sorry, I failed to ask Gemini: {e}")
