@@ -205,3 +205,35 @@ function onEdit(e) {
   }
 }
 
+function initializeSheetColumns() {
+  var doc = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = doc.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var sheet = sheets[i];
+    var name = sheet.getName();
+    if (name === "Entries" || name === "Demo Task Status" || name === "Next Steps") {
+      var lastCol = sheet.getLastColumn();
+      var headers = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+      
+      // 1. Add Candidate_ID to Column A if it doesn't exist
+      var cidIdx = headers.indexOf("Candidate_ID");
+      if (cidIdx === -1) cidIdx = headers.indexOf("Candidate ID");
+      if (cidIdx === -1) {
+        sheet.insertColumnBefore(1);
+        sheet.getRange(1, 1).setValue("Candidate_ID");
+        // Reload headers
+        lastCol = sheet.getLastColumn();
+        headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+      }
+      
+      // 2. Add Last_Modified to the end if it doesn't exist
+      var lmIdx = headers.indexOf("Last_Modified");
+      if (lmIdx === -1) lmIdx = headers.indexOf("Last Modified");
+      if (lmIdx === -1) {
+        sheet.getRange(1, lastCol + 1).setValue("Last_Modified");
+      }
+    }
+  }
+}
+
+
