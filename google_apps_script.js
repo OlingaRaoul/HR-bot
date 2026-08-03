@@ -189,18 +189,31 @@ function onEdit(e) {
     emailIdx = headers.indexOf("Contact Email");
   }
   if (emailIdx === -1) {
-    emailIdx = headers.indexOf("Contact Email               "); // Support exact spaced header
+    emailIdx = headers.indexOf("Contact Email               ");
   }
   
-  if (candidateIdIdx !== -1 && emailIdx !== -1) {
+  if (candidateIdIdx !== -1) {
     var candidateIdCol = candidateIdIdx + 1;
-    var emailCol = emailIdx + 1;
-    var currentIdVal = sheet.getRange(row, candidateIdCol).getValue();
-    var emailVal = sheet.getRange(row, emailCol).getValue();
     
-    if (currentIdVal.toString().trim() === "" && emailVal.toString().trim() !== "") {
-      var newId = "SG-" + (10000 + row);
-      sheet.getRange(row, candidateIdCol).setValue(newId);
+    // Lock Candidate_ID from manual edits by reverting changes
+    if (range.getColumn() === candidateIdCol) {
+      var oldVal = e.oldValue;
+      if (oldVal !== undefined && oldVal !== null && oldVal.toString().trim() !== "") {
+        range.setValue(oldVal);
+        e.source.toast("⚠️ Candidate ID is locked and cannot be edited manually!", "Permission Denied");
+        return;
+      }
+    }
+    
+    if (emailIdx !== -1) {
+      var emailCol = emailIdx + 1;
+      var currentIdVal = sheet.getRange(row, candidateIdCol).getValue();
+      var emailVal = sheet.getRange(row, emailCol).getValue();
+      
+      if (currentIdVal.toString().trim() === "" && emailVal.toString().trim() !== "") {
+        var newId = "SG-" + (10000 + row);
+        sheet.getRange(row, candidateIdCol).setValue(newId);
+      }
     }
   }
 }
@@ -232,6 +245,37 @@ function initializeSheetColumns() {
       if (lmIdx === -1) lmIdx = headers.indexOf("Last Modified");
       if (lmIdx === -1) {
         sheet.getRange(1, lastCol + 1).setValue("Last_Modified");
+        lastCol = sheet.getLastColumn();
+        headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+      }
+      
+      // 3. Generate Candidate_IDs for all existing candidates
+      var lastRow = sheet.getLastRow();
+      if (lastRow > 1) {
+        var emailColIdx = headers.indexOf("Email");
+        if (emailColIdx === -1) emailColIdx = headers.indexOf("Contact Email");
+        if (emailColIdx === -1) emailColIdx = headers.indexOf("Contact Email               ");
+        
+        var cidColIdx = headers.indexOf("Candidate_ID");
+        if (cidColIdx === -1) cidColIdx = headers.indexOf("Candidate ID");
+        
+        if (cidColIdx !== -1 && emailColIdx !== -1) {
+          var cidCol = cidColIdx + 1;
+          var emailCol = emailColIdx + 1;
+          
+          var idValues = sheet.getRange(2, cidCol, lastRow - 1, 1).getValues();
+          var emailValues = sheet.getRange(2, emailCol, lastRow - 1, 1).getValues();
+          
+          for (var r = 0; r < idValues.length; r++) {
+            var rowNum = r + 2;
+            var currentId = idValues[r][0];
+            var emailVal = emailValues[r][0];
+            if (currentId.toString().trim() === "" && emailVal.toString().trim() !== "") {
+              var newId = "SG-" + (10000 + rowNum);
+              sheet.getRange(rowNum, cidCol).setValue(newId);
+            }
+          }
+        }
       }
     }
   }
