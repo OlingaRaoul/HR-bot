@@ -220,59 +220,129 @@ function onEdit(e) {
 
 function initializeSheetColumns() {
   var doc = SpreadsheetApp.getActiveSpreadsheet();
-  var sheets = doc.getSheets();
-  for (var i = 0; i < sheets.length; i++) {
-    var sheet = sheets[i];
-    var name = sheet.getName();
-    if (name === "Entries" || name === "Demo Task Status" || name === "Next Steps") {
+  
+  // 1. First, make sure the Candidate_ID and Last_Modified columns are added to all three sheets
+  var sheetsToProcess = ["Entries", "Demo Task Status", "Next Steps"];
+  for (var i = 0; i < sheetsToProcess.length; i++) {
+    var sheet = doc.getSheetByName(sheetsToProcess[i]);
+    if (sheet) {
       var lastCol = sheet.getLastColumn();
       var headers = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
       
-      // 1. Add Candidate_ID to Column A if it doesn't exist
+      // Add Candidate_ID to Column A if it doesn't exist
       var cidIdx = headers.indexOf("Candidate_ID");
       if (cidIdx === -1) cidIdx = headers.indexOf("Candidate ID");
       if (cidIdx === -1) {
         sheet.insertColumnBefore(1);
         sheet.getRange(1, 1).clearDataValidations();
         sheet.getRange(1, 1).setValue("Candidate_ID");
-        // Reload headers
         lastCol = sheet.getLastColumn();
         headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
       }
       
-      // 2. Add Last_Modified to the end if it doesn't exist
+      // Add Last_Modified to the end if it doesn't exist
       var lmIdx = headers.indexOf("Last_Modified");
       if (lmIdx === -1) lmIdx = headers.indexOf("Last Modified");
       if (lmIdx === -1) {
         sheet.getRange(1, lastCol + 1).setValue("Last_Modified");
-        lastCol = sheet.getLastColumn();
-        headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
       }
+    }
+  }
+  
+  // 2. Load the Entries sheet data to build a map of Name -> Candidate_ID
+  var entriesSheet = doc.getSheetByName("Entries");
+  var nameToIdMap = {};
+  if (entriesSheet) {
+    var lastCol = entriesSheet.getLastColumn();
+    var lastRow = entriesSheet.getLastRow();
+    if (lastRow > 1) {
+      var headers = entriesSheet.getRange(1, 1, 1, lastCol).getValues()[0];
       
-      // 3. Generate Candidate_IDs for all existing candidates
+      var cidColIdx = headers.indexOf("Candidate_ID");
+      if (cidColIdx === -1) cidColIdx = headers.indexOf("Candidate ID");
+      
+      var firstNameColIdx = headers.indexOf("First Name");
+      var lastNameColIdx = headers.indexOf("Last Name");
+      
+      var emailColIdx = headers.indexOf("Email");
+      if (emailColIdx === -1) emailColIdx = headers.indexOf("Contact Email");
+      if (emailColIdx === -1) emailColIdx = headers.indexOf("Contact Email               ");
+      
+      if (cidColIdx !== -1) {
+        var cidCol = cidColIdx + 1;
+        var fNameCol = firstNameColIdx + 1;
+        var lNameCol = lastNameColIdx + 1;
+        var emailCol = emailColIdx + 1;
+        
+        var idValues = entriesSheet.getRange(2, cidCol, lastRow - 1, 1).getValues();
+        var fNameValues = firstNameColIdx !== -1 ? entriesSheet.getRange(2, fNameCol, lastRow - 1, 1).getValues() : [];
+        var lNameValues = lastNameColIdx !== -1 ? entriesSheet.getRange(2, lNameCol, lastRow - 1, 1).getValues() : [];
+        var emailValues = emailColIdx !== -1 ? entriesSheet.getRange(2, emailCol, lastRow - 1, 1).getValues() : [];
+        
+        // Loop through Entries, generate missing IDs, and build nameToIdMap
+        for (var r = 0; r < idValues.length; r++) {
+          var rowNum = r + 2;
+          var currentId = idValues[r][0].toString().trim();
+          var emailVal = emailColIdx !== -1 ? emailValues[r][0].toString().trim() : "";
+          
+          var fNameVal = firstNameColIdx !== -1 ? fNameValues[r][0].toString().trim() : "";
+          var lNameVal = lastNameColIdx !== -1 ? lNameValues[r][0].toString().trim() : "";
+          var fullName = (fNameVal + " " + lNameVal).trim();
+          
+          if (currentId === "" && emailVal !== "") {
+            currentId = "SG-" + (10000 + rowNum);
+            entriesSheet.getRange(rowNum, cidCol).setValue(currentId);
+          }
+          
+          if (currentId !== "" && fullName !== "") {
+            nameToIdMap[fullName.toLowerCase()] = currentId;
+          }
+        }
+      }
+    }
+  }
+  
+  // 3. Populate Candidate_IDs in "Demo Task Status" and "Next Steps" using nameToIdMap
+  var otherSheets = ["Demo Task Status", "Next Steps"];
+  for (var s = 0; s < otherSheets.length; s++) {
+    var sheet = doc.getSheetByName(otherSheets[s]);
+    if (sheet) {
+      var lastCol = sheet.getLastColumn();
       var lastRow = sheet.getLastRow();
       if (lastRow > 1) {
-        var emailColIdx = headers.indexOf("Email");
-        if (emailColIdx === -1) emailColIdx = headers.indexOf("Contact Email");
-        if (emailColIdx === -1) emailColIdx = headers.indexOf("Contact Email               ");
-        
+        var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
         var cidColIdx = headers.indexOf("Candidate_ID");
         if (cidColIdx === -1) cidColIdx = headers.indexOf("Candidate ID");
         
-        if (cidColIdx !== -1 && emailColIdx !== -1) {
+        if (cidColIdx !== -1) {
           var cidCol = cidColIdx + 1;
-          var emailCol = emailColIdx + 1;
-          
           var idValues = sheet.getRange(2, cidCol, lastRow - 1, 1).getValues();
-          var emailValues = sheet.getRange(2, emailCol, lastRow - 1, 1).getValues();
           
           for (var r = 0; r < idValues.length; r++) {
             var rowNum = r + 2;
-            var currentId = idValues[r][0];
-            var emailVal = emailValues[r][0];
-            if (currentId.toString().trim() === "" && emailVal.toString().trim() !== "") {
-              var newId = "SG-" + (10000 + rowNum);
-              sheet.getRange(rowNum, cidCol).setValue(newId);
+            var currentId = idValues[r][0].toString().trim();
+            
+            if (currentId === "") {
+              // Extract candidate name from row content
+              var candidateName = "";
+              if (otherSheets[s] === "Demo Task Status") {
+                var evalColIdx = headers.indexOf("Demo Task Evaluation");
+                if (evalColIdx === -1) evalColIdx = headers.indexOf("Demo Task Evaluation               ");
+                if (evalColIdx !== -1) {
+                  var evalVal = sheet.getRange(rowNum, evalColIdx + 1).getValue().toString().trim();
+                  candidateName = evalVal.replace("Demo Task Evaluation - ", "").replace("Task Evaluation - ", "").trim();
+                }
+              } else if (otherSheets[s] === "Next Steps") {
+                var nameColIdx = headers.indexOf("Name");
+                if (nameColIdx !== -1) {
+                  candidateName = sheet.getRange(rowNum, nameColIdx + 1).getValue().toString().trim();
+                }
+              }
+              
+              if (candidateName !== "" && nameToIdMap[candidateName.toLowerCase()]) {
+                var mappedId = nameToIdMap[candidateName.toLowerCase()];
+                sheet.getRange(rowNum, cidCol).setValue(mappedId);
+              }
             }
           }
         }
