@@ -234,10 +234,17 @@ function initializeSheetColumns() {
       if (cidIdx === -1) cidIdx = headers.indexOf("Candidate ID");
       if (cidIdx === -1) {
         sheet.insertColumnBefore(1);
-        sheet.getRange(1, 1).clearDataValidations();
-        sheet.getRange(1, 1).setValue("Candidate_ID");
         lastCol = sheet.getLastColumn();
         headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+      }
+      
+      // Clear validation rules for the entire Candidate_ID column to prevent errors
+      var cleanCidIdx = headers.indexOf("Candidate_ID");
+      if (cleanCidIdx === -1) cleanCidIdx = headers.indexOf("Candidate ID");
+      if (cleanCidIdx !== -1) {
+        var maxRows = Math.max(1, sheet.getLastRow());
+        sheet.getRange(1, cleanCidIdx + 1, maxRows, 1).clearDataValidations();
+        sheet.getRange(1, cleanCidIdx + 1).setValue("Candidate_ID");
       }
       
       // Add Last_Modified to the end if it doesn't exist
