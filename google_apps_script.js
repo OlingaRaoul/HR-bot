@@ -156,3 +156,52 @@ function updateCandidateStatus(sheetName, email, newStatus) {
   return ContentService.createTextOutput(JSON.stringify({status: "error", message: "Candidate not found"}))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
+function onEdit(e) {
+  var sheet = e.source.getActiveSheet();
+  var range = e.range;
+  var row = range.getRow();
+  
+  if (row <= 1) return;
+  
+  var headers = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
+  
+  // 1. Automatically update "Last Modified" timestamp
+  var lastModifiedIdx = headers.indexOf("Last Modified");
+  if (lastModifiedIdx === -1) {
+    lastModifiedIdx = headers.indexOf("Last_Modified");
+  }
+  
+  if (lastModifiedIdx !== -1) {
+    var lastModifiedCol = lastModifiedIdx + 1;
+    if (range.getColumn() !== lastModifiedCol) {
+      sheet.getRange(row, lastModifiedCol).setValue(new Date());
+    }
+  }
+  
+  // 2. Automatically generate "Candidate_ID"
+  var candidateIdIdx = headers.indexOf("Candidate_ID");
+  if (candidateIdIdx === -1) {
+    candidateIdIdx = headers.indexOf("Candidate ID");
+  }
+  var emailIdx = headers.indexOf("Email");
+  if (emailIdx === -1) {
+    emailIdx = headers.indexOf("Contact Email");
+  }
+  if (emailIdx === -1) {
+    emailIdx = headers.indexOf("Contact Email               "); // Support exact spaced header
+  }
+  
+  if (candidateIdIdx !== -1 && emailIdx !== -1) {
+    var candidateIdCol = candidateIdIdx + 1;
+    var emailCol = emailIdx + 1;
+    var currentIdVal = sheet.getRange(row, candidateIdCol).getValue();
+    var emailVal = sheet.getRange(row, emailCol).getValue();
+    
+    if (currentIdVal.toString().trim() === "" && emailVal.toString().trim() !== "") {
+      var newId = "SG-" + (10000 + row);
+      sheet.getRange(row, candidateIdCol).setValue(newId);
+    }
+  }
+}
+

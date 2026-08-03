@@ -31,6 +31,7 @@ class CandidateProfile(BaseModel):
     role: str = Field(description="The position or role, formatted neatly.")
     overall_sentiment: str = Field(description="Assessment based on candidate notes (e.g., 'Strong Profile', 'Good cultural match').")
     summary: str = Field(description="A concise 1-sentence summary of the candidate's current recruitment standing.")
+    candidate_id: str = Field(default="", description="The candidate's unique ID if present, otherwise empty.")
 
 # Initialize the SheetsClient
 sheets = SheetsClient()
@@ -62,9 +63,9 @@ def validate_candidate_profile(state: CandidateState) -> Dict[str, Any]:
     role = candidate.get("Position you are interested in:", "") or candidate.get("Role", "")
     role = str(role).strip()
     
-    notes = candidate.get("Notes", "").strip()
+    candidate_id = str(candidate.get("Candidate_ID", "") or candidate.get("Candidate ID", "")).strip()
     
-    logs.append(f"Starting validation for candidate: {email or 'Unknown'}")
+    logs.append(f"Starting validation for candidate: {email or 'Unknown'} (ID: {candidate_id or 'None'})")
     
     if not name or "@" not in email:
         logs.append("Validation failed: Missing name or invalid email address.")
@@ -80,7 +81,8 @@ def validate_candidate_profile(state: CandidateState) -> Dict[str, Any]:
         "email": email,
         "role": role,
         "overall_sentiment": "Not assessed (LLM key missing)",
-        "summary": f"Candidate for {role} at stage {state['current_stage']}"
+        "summary": f"Candidate for {role} at stage {state['current_stage']}",
+        "candidate_id": candidate_id
     }
 
     if config.GEMINI_API_KEY:
@@ -112,9 +114,11 @@ def validate_candidate_profile(state: CandidateState) -> Dict[str, Any]:
             )
             res: CandidateProfile = structured_llm.invoke(prompt)
             profile_data = res.model_dump()
+            profile_data["candidate_id"] = candidate_id
             logs.append("Candidate profile successfully structured and validated via Gemini.")
         except Exception as e:
             logs.append(f"LLM validation error: {e}. Falling back to standard values.")
+            profile_data["candidate_id"] = candidate_id
     else:
         logs.append("Gemini API Key missing. Proceeding with standard dictionary validation.")
 
@@ -141,6 +145,7 @@ def sync_candidate_to_next_stage(state: CandidateState) -> Dict[str, Any]:
     # Prepare row data matching target worksheet headers
     if target_stage == "Demo Task Status":
         row_data = {
+            "Candidate_ID": profile.get("candidate_id", ""),
             "Close Deadline": "False",
             "Demo task": "Yes",
             "Submission deadline": "",
@@ -159,6 +164,7 @@ def sync_candidate_to_next_stage(state: CandidateState) -> Dict[str, Any]:
         }
     elif target_stage == "Next Steps":
         row_data = {
+            "Candidate_ID": profile.get("candidate_id", ""),
             "State": "Pending",
             "Name": profile["name"],
             "Start Date": "",
@@ -175,7 +181,7 @@ def sync_candidate_to_next_stage(state: CandidateState) -> Dict[str, Any]:
         }
     else:
         row_data = {
-            "Candidate_ID": state["candidate"].get("Candidate_ID", ""),
+            "Candidate_ID": profile.get("candidate_id", ""),
             "Name": profile["name"],
             "Email": profile["email"],
             "Role": profile["role"],

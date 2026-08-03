@@ -258,9 +258,13 @@ def reply_gemini_chat(say, prompt):
             for row in entries:
                 status = str(row.get("Status") or "").strip().lower()
                 if status in ("pending", "open"):
-                    entry_date = parse_sheet_date(row.get("Entry Date"))
-                    if entry_date:
-                        days_since = (today - entry_date).days
+                    # Check Last_Modified first, fall back to Entry Date
+                    last_mod_str = row.get("Last_Modified") or row.get("Last Modified")
+                    last_mod_date = parse_sheet_date(last_mod_str)
+                    
+                    calc_date = last_mod_date if last_mod_date else parse_sheet_date(row.get("Entry Date"))
+                    if calc_date:
+                        days_since = (today - calc_date).days
                         if days_since >= 30:
                             f_name = str(row.get("First Name") or "").strip()
                             l_name = str(row.get("Last Name") or "").strip()
@@ -272,16 +276,24 @@ def reply_gemini_chat(say, prompt):
                                 )
                                 
             # Cross-sheet mismatches
-            demo_statuses = {}
+            # Key: candidate_id (if present), or name.lower() as fallback
+            demo_by_id = {}
+            demo_by_name = {}
             for row in demo_tasks:
                 eval_col = str(row.get("Demo Task Evaluation") or "")
                 name = eval_col.replace("Demo Task Evaluation - ", "").replace("Task Evaluation - ", "").strip()
+                cid = str(row.get("Candidate_ID") or row.get("Candidate ID") or "").strip()
+                
+                info = {
+                    "name": name,
+                    "status": str(row.get("Status") or "").strip(),
+                    "state": str(row.get("State of demo task") or "").strip(),
+                    "candidate_id": cid
+                }
+                if cid:
+                    demo_by_id[cid.lower()] = info
                 if name:
-                    demo_statuses[name.lower()] = {
-                        "name": name,
-                        "status": str(row.get("Status") or "").strip(),
-                        "state": str(row.get("State of demo task") or "").strip()
-                    }
+                    demo_by_name[name.lower()] = info
                     
             for row in entries:
                 f_name = str(row.get("First Name") or "").strip()
@@ -289,19 +301,33 @@ def reply_gemini_chat(say, prompt):
                 name = f"{f_name} {l_name}".strip()
                 entry_status = str(row.get("Status") or "").strip()
                 entry_stage = str(row.get("Stage") or "").strip()
+                cid = str(row.get("Candidate_ID") or row.get("Candidate ID") or "").strip()
                 
                 if name:
-                    # Miriam Püschner case: marked Coming in Demo Task Status but not active at Demo Task in Entries
-                    if name.lower() in demo_statuses:
-                        demo_info = demo_statuses[name.lower()]
+                    # Look up by ID first, then fallback to name
+                    demo_info = None
+                    if cid and cid.lower() in demo_by_id:
+                        demo_info = demo_by_id[cid.lower()]
+                    elif name.lower() in demo_by_name:
+                        demo_info = demo_by_name[name.lower()]
+                        
+                    # Mismatch A: marked "Coming" in Demo but not active at Demo Task in Entries
+                    if demo_info:
                         if demo_info["status"].lower() == "coming" and entry_status.lower() not in ("coming", "closed", "accepted"):
                             mismatches.append(
                                 f"⚠️ Sheet mismatch — {demo_info['name']}\n"
                                 f"{demo_info['name']} shows Status \"Coming\" in Demo Task Status, but Entries doesn't show them as active at Demo Task stage. Update Entries to match."
                             )
-                    # Ahmad Hijazi case: Demo Task stage in Entries but no row in Demo Task Status
+                            
+                    # Mismatch B: Demo Task stage in Entries but no row in Demo Task Status
                     if entry_stage.lower() in ("demo tasks", "demo task") and entry_status.lower() in ("pending", "open"):
-                        if name.lower() not in demo_statuses:
+                        has_row = False
+                        if cid and cid.lower() in demo_by_id:
+                            has_row = True
+                        elif name.lower() in demo_by_name:
+                            has_row = True
+                            
+                        if not has_row:
                             mismatches.append(
                                 f"⚠️ Sheet mismatch — {name}\n"
                                 f"{name} is at Demo Task stage in Entries (Status: {entry_status.upper()}) but has no row in Demo Task Status. Add them, or update Entries if this candidate actually dropped out."
