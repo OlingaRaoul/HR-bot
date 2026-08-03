@@ -195,11 +195,16 @@ function onEdit(e) {
   if (candidateIdIdx !== -1) {
     var candidateIdCol = candidateIdIdx + 1;
     
-    // Lock Candidate_ID from manual edits by reverting changes
+    // Lock Candidate_ID from manual edits by reverting changes (handles edits, deletions, and new values)
     if (range.getColumn() === candidateIdCol) {
-      var oldVal = e.oldValue;
-      if (oldVal !== undefined && oldVal !== null && oldVal.toString().trim() !== "") {
-        range.setValue(oldVal);
+      var sheetName = sheet.getName();
+      if (sheetName === "Entries" || sheetName === "Demo Task Status" || sheetName === "Next Steps") {
+        var oldVal = e.oldValue;
+        if (oldVal !== undefined && oldVal !== null && oldVal.toString().trim() !== "") {
+          range.setValue(oldVal);
+        } else {
+          range.clearContent();
+        }
         e.source.toast("⚠️ Candidate ID is locked and cannot be edited manually!", "Permission Denied");
         return;
       }
