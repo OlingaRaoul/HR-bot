@@ -220,6 +220,7 @@ function initializeSheetColumns() {
       if (cidIdx === -1) cidIdx = headers.indexOf("Candidate ID");
       if (cidIdx === -1) {
         sheet.insertColumnBefore(1);
+        sheet.getRange(1, 1).clearDataValidations();
         sheet.getRange(1, 1).setValue("Candidate_ID");
         // Reload headers
         lastCol = sheet.getLastColumn();
