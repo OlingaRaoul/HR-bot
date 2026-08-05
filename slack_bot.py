@@ -22,6 +22,20 @@ app = App(
     signing_secret=os.getenv("SLACK_SIGNING_SECRET")
 )
 
+def extract_text_content(content):
+    """Safely extracts text content from LangChain AIMessage content (which can be a string or a list of dicts)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        texts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                texts.append(block.get("text", ""))
+            elif isinstance(block, str):
+                texts.append(block)
+        return "".join(texts)
+    return str(content)
+
 def parse_sheet_date(date_str):
     """Parses various date formats from the spreadsheet into a python date object."""
     if not date_str:
@@ -207,7 +221,7 @@ def reply_gemini_chat(say, prompt):
     try:
         if is_openrouter:
             decision_llm = ChatOpenAI(
-                model="google/gemini-2.5-flash",
+                model="google/gemini-3.5-flash",
                 api_key=config.GEMINI_API_KEY,
                 base_url="https://openrouter.ai/api/v1",
                 temperature=0,
@@ -216,7 +230,7 @@ def reply_gemini_chat(say, prompt):
         else:
             from langchain_google_genai import ChatGoogleGenerativeAI
             decision_llm = ChatGoogleGenerativeAI(
-                model="gemini-2.5-flash",
+                model="gemini-3.5-flash",
                 google_api_key=config.GEMINI_API_KEY,
                 temperature=0,
                 max_output_tokens=10
@@ -474,44 +488,44 @@ def reply_gemini_chat(say, prompt):
             
             if is_openrouter:
                 llm = ChatOpenAI(
-                    model="google/gemini-2.5-flash",
+                    model="google/gemini-3.5-flash",
                     api_key=config.GEMINI_API_KEY,
                     base_url="https://openrouter.ai/api/v1",
                     temperature=0.3,
-                    max_tokens=500
+                    max_tokens=1000
                 )
             else:
                 from langchain_google_genai import ChatGoogleGenerativeAI
                 llm = ChatGoogleGenerativeAI(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.5-flash",
                     google_api_key=config.GEMINI_API_KEY,
                     temperature=0.3,
-                    max_output_tokens=500
+                    max_output_tokens=1000
                 )
             res = llm.invoke(prompt_context)
-            say(res.content)
+            say(extract_text_content(res.content))
         except Exception as e:
             say(f"⚠️ Error querying database: {e}")
     else:
         try:
             if is_openrouter:
                 llm = ChatOpenAI(
-                    model="google/gemini-2.5-flash",
+                    model="google/gemini-3.5-flash",
                     api_key=config.GEMINI_API_KEY,
                     base_url="https://openrouter.ai/api/v1",
                     temperature=0.7,
-                    max_tokens=500
+                    max_tokens=1000
                 )
             else:
                 from langchain_google_genai import ChatGoogleGenerativeAI
                 llm = ChatGoogleGenerativeAI(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.5-flash",
                     google_api_key=config.GEMINI_API_KEY,
                     temperature=0.7,
-                    max_output_tokens=500
+                    max_output_tokens=1000
                 )
             res = llm.invoke(f"You are a warm, helpful, and natural HR Assistant for Startup Greece. Answer the following question in a friendly, conversational way: {prompt}")
-            say(res.content)
+            say(extract_text_content(res.content))
         except Exception as e:
             say(f"🤖 Sorry, I failed to ask Gemini: {e}")
 
