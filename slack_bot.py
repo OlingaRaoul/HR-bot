@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 import config
 from sheets_client import SheetsClient
@@ -35,6 +36,18 @@ def extract_text_content(content):
                 texts.append(block)
         return "".join(texts)
     return str(content)
+
+thread_memory = {}
+
+def add_to_memory(key, msg):
+    """Adds a message to the thread/channel sliding-window conversation history."""
+    if not key:
+        return
+    if key not in thread_memory:
+        thread_memory[key] = []
+    thread_memory[key].append(msg)
+    if len(thread_memory[key]) > 6:
+        thread_memory[key] = thread_memory[key][-6:]
 
 def parse_sheet_date(date_str):
     """Parses various date formats from the spreadsheet into a python date object."""
@@ -105,7 +118,7 @@ def handle_app_mention(event, say):
             reply_sync(say)
         else:
             # Fallback: Treat as a direct question to the AI Agent
-            reply_gemini_chat(say, command)
+            reply_gemini_chat(say, command, event)
     except Exception as e:
         print(f"Error handling Slack command '{command}': {e}")
         try:
@@ -136,7 +149,7 @@ def handle_message_events(event, say):
             elif command_lower in ("sync", "run", "/sync", "/run"):
                 reply_sync(say)
             else:
-                reply_gemini_chat(say, command)
+                reply_gemini_chat(say, command, event)
         except Exception as e:
             print(f"Error handling Slack DM command '{command}': {e}")
             try:
@@ -210,11 +223,15 @@ def reply_sync(say):
     except Exception as e:
         say(f"⚠️ Error executing sync: {e}")
 
-def reply_gemini_chat(say, prompt):
+def reply_gemini_chat(say, prompt, event=None):
     if not config.GEMINI_API_KEY:
         say("🤖 Gemini AI engine is not configured (API key missing).")
         return
         
+    conversation_key = None
+    if event:
+        conversation_key = event.get("thread_ts") or event.get("channel")
+
     needs_excel = False
     is_openrouter = config.GEMINI_API_KEY.strip().startswith("sk-or-")
     
@@ -502,8 +519,19 @@ def reply_gemini_chat(say, prompt):
                     temperature=0.3,
                     max_output_tokens=1000
                 )
-            res = llm.invoke(prompt_context)
-            say(extract_text_content(res.content))
+                
+            messages = [SystemMessage(content=prompt_context)]
+            if conversation_key and conversation_key in thread_memory:
+                messages.extend(thread_memory[conversation_key])
+            messages.append(HumanMessage(content=prompt))
+            
+            res = llm.invoke(messages)
+            bot_reply = extract_text_content(res.content)
+            say(bot_reply)
+            
+            if conversation_key:
+                add_to_memory(conversation_key, HumanMessage(content=prompt))
+                add_to_memory(conversation_key, AIMessage(content=bot_reply))
         except Exception as e:
             say(f"⚠️ Error querying database: {e}")
     else:
@@ -524,8 +552,20 @@ def reply_gemini_chat(say, prompt):
                     temperature=0.7,
                     max_output_tokens=1000
                 )
-            res = llm.invoke(f"You are a warm, helpful, and natural HR Assistant for Startup Greece. Answer the following question in a friendly, conversational way: {prompt}")
-            say(extract_text_content(res.content))
+                
+            system_instruction = "You are a warm, helpful, and natural HR Assistant for Startup Greece. Answer in a friendly, conversational way."
+            messages = [SystemMessage(content=system_instruction)]
+            if conversation_key and conversation_key in thread_memory:
+                messages.extend(thread_memory[conversation_key])
+            messages.append(HumanMessage(content=prompt))
+            
+            res = llm.invoke(messages)
+            bot_reply = extract_text_content(res.content)
+            say(bot_reply)
+            
+            if conversation_key:
+                add_to_memory(conversation_key, HumanMessage(content=prompt))
+                add_to_memory(conversation_key, AIMessage(content=bot_reply))
         except Exception as e:
             say(f"🤖 Sorry, I failed to ask Gemini: {e}")
 
