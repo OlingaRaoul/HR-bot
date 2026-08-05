@@ -242,7 +242,7 @@ def reply_gemini_chat(say, prompt, event=None):
                 api_key=config.GEMINI_API_KEY,
                 base_url="https://openrouter.ai/api/v1",
                 temperature=0,
-                max_tokens=10
+                max_tokens=100
             )
         else:
             from langchain_google_genai import ChatGoogleGenerativeAI
@@ -250,7 +250,7 @@ def reply_gemini_chat(say, prompt, event=None):
                 model="gemini-3.5-flash",
                 google_api_key=config.GEMINI_API_KEY,
                 temperature=0,
-                max_output_tokens=10
+                max_output_tokens=100
             )
             
         decision_prompt = (
@@ -260,7 +260,8 @@ def reply_gemini_chat(say, prompt, event=None):
             "Reply with ONLY 'YES' or 'NO' and nothing else."
         )
         decision_res = decision_llm.invoke(decision_prompt)
-        needs_excel = "yes" in str(decision_res.content).strip().lower()
+        decision_text = extract_text_content(decision_res.content).strip().lower()
+        needs_excel = "yes" in decision_text
     except Exception as e:
         print(f"Error classifying Excel dependency: {e}")
         keywords = ("candidate", "trainee", "demo", "status", "people", "names", "who", "stage", "onboarding", "position", "sheet", "excel", "list", "progress", "month", "summary", "percentage", "accepted")
