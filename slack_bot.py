@@ -238,7 +238,7 @@ def reply_gemini_chat(say, prompt, event=None):
     try:
         if is_openrouter:
             decision_llm = ChatOpenAI(
-                model="google/gemini-3.5-flash",
+                model="google/gemini-flash-1.5",
                 api_key=config.GEMINI_API_KEY,
                 base_url="https://openrouter.ai/api/v1",
                 temperature=0,
@@ -247,7 +247,7 @@ def reply_gemini_chat(say, prompt, event=None):
         else:
             from langchain_google_genai import ChatGoogleGenerativeAI
             decision_llm = ChatGoogleGenerativeAI(
-                model="gemini-3.5-flash",
+                model="gemini-flash-latest",
                 google_api_key=config.GEMINI_API_KEY,
                 temperature=0,
                 max_output_tokens=100
@@ -506,7 +506,7 @@ def reply_gemini_chat(say, prompt, event=None):
             
             if is_openrouter:
                 llm = ChatOpenAI(
-                    model="google/gemini-3.5-flash",
+                    model="google/gemini-flash-1.5",
                     api_key=config.GEMINI_API_KEY,
                     base_url="https://openrouter.ai/api/v1",
                     temperature=0.3,
@@ -515,7 +515,7 @@ def reply_gemini_chat(say, prompt, event=None):
             else:
                 from langchain_google_genai import ChatGoogleGenerativeAI
                 llm = ChatGoogleGenerativeAI(
-                    model="gemini-3.5-flash",
+                    model="gemini-flash-latest",
                     google_api_key=config.GEMINI_API_KEY,
                     temperature=0.3,
                     max_output_tokens=1000
@@ -539,7 +539,7 @@ def reply_gemini_chat(say, prompt, event=None):
         try:
             if is_openrouter:
                 llm = ChatOpenAI(
-                    model="google/gemini-3.5-flash",
+                    model="google/gemini-flash-1.5",
                     api_key=config.GEMINI_API_KEY,
                     base_url="https://openrouter.ai/api/v1",
                     temperature=0.7,
@@ -548,7 +548,7 @@ def reply_gemini_chat(say, prompt, event=None):
             else:
                 from langchain_google_genai import ChatGoogleGenerativeAI
                 llm = ChatGoogleGenerativeAI(
-                    model="gemini-3.5-flash",
+                    model="gemini-flash-latest",
                     google_api_key=config.GEMINI_API_KEY,
                     temperature=0.7,
                     max_output_tokens=1000

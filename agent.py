@@ -90,7 +90,7 @@ def validate_candidate_profile(state: CandidateState) -> Dict[str, Any]:
             is_openrouter = config.GEMINI_API_KEY.strip().startswith("sk-or-")
             if is_openrouter:
                 llm = ChatOpenAI(
-                    model="google/gemini-3.5-flash",
+                    model="google/gemini-flash-1.5",
                     api_key=config.GEMINI_API_KEY,
                     base_url="https://openrouter.ai/api/v1",
                     temperature=0,
@@ -99,7 +99,7 @@ def validate_candidate_profile(state: CandidateState) -> Dict[str, Any]:
             else:
                 from langchain_google_genai import ChatGoogleGenerativeAI
                 llm = ChatGoogleGenerativeAI(
-                    model="gemini-3.5-flash",
+                    model="gemini-flash-latest",
                     google_api_key=config.GEMINI_API_KEY,
                     temperature=0,
                     max_output_tokens=400
